@@ -415,6 +415,16 @@ canvas.addEventListener('click', e => {
     handleInteraction(mx, my, false);
 });
 
+// ── Mobile Touch Helper ─────────────────────────────────────────────────────
+function getTouchPos(e) {
+    const touch = e.touches[0] || e.changedTouches[0];
+    const r = canvas.getBoundingClientRect();
+    return {
+        mx: (touch.clientX - r.left) * (W / r.width),
+        my: (touch.clientY - r.top) * (H / r.height)
+    };
+}
+
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     const { mx, my } = getTouchPos(e);
@@ -425,17 +435,6 @@ canvas.addEventListener('touchmove', e => {
     e.preventDefault();
     if (gameState === 'playing') {
         const { mx } = getTouchPos(e);
-        touchX = mx;
-    }
-}, { passive: false });
-
-canvas.addEventListener('touchend', e => {
-    touchX = null;
-}, { passive: false });
-
-canvas.addEventListener('touchmove', e => {
-    if (gameState === 'playing') {
-        const { mx } = handleTouch(e);
         touchX = mx;
     }
 }, { passive: false });
