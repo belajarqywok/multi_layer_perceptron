@@ -60,10 +60,9 @@ class Player {
         if (keys['ArrowLeft']||keys['a']||keys['A']) this.x-=this.spd;
         if (keys['ArrowRight']||keys['d']||keys['D']) this.x+=this.spd;
         
-        // Mobile touch movement
+        // Mobile touch movement (instant follow feels better on touch)
         if (touchX !== null) {
-            const dx = touchX - this.x;
-            if (Math.abs(dx) > 5) this.x += Math.sign(dx) * this.spd;
+            this.x = touchX;
         }
 
         this.x=Math.max(this.w/2, Math.min(W-this.w/2, this.x));
@@ -364,91 +363,74 @@ document.addEventListener('keydown',e=>{
 });
 document.addEventListener('keyup',e=>{ keys[e.key]=false; });
 
-canvas.addEventListener('click',e=>{
-    const r=canvas.getBoundingClientRect();
-    const mx=(e.clientX-r.left)*(W/r.width);
-    const my=(e.clientY-r.top)*(H/r.height);
-    
-    if(gameState==='menu'){
-        ['easy','medium','hard'].forEach((d,i)=>{
-            const bx=W/2-130+i*130,by=196,bh=36;
-            if(mx>=bx-50&&mx<=bx+50&&my>=by&&my<=by+bh) diffMode=d;
-        });
-        if(mx>=W/2-100&&mx<=W/2+100&&my>=355&&my<=395){ store.save(); gameState='shop'; }
+function handleInteraction(mx, my, isTouch) {
+    if (gameState === 'playing') {
+        if (isTouch) touchX = mx;
+        return;
+    }
 
-        // Menu Save/Load handlers
+    if (gameState === 'menu') {
+        // Difficulty tabs
+        ['easy', 'medium', 'hard'].forEach((d, i) => {
+            const bx = W / 2 - 130 + i * 130, by = 196, bh = 36;
+            if (mx >= bx - 50 && mx <= bx + 50 && my >= by && my <= by + bh) diffMode = d;
+        });
+
+        // Shop button
+        if (mx >= W / 2 - 100 && mx <= W / 2 + 100 && my >= 350 && my <= 400) { 
+            store.save(); gameState = 'shop'; return; 
+        }
+
+        // Save/Load buttons
         const bx1 = W/2 - 130, bx2 = W/2 + 20, by = 410, bw = 110, bh = 30;
-        if(mx>=bx1 && mx<=bx1+bw && my>=by && my<=by+bh) store.downloadSave();
-        if(mx>=bx2 && mx<=bx2+bw && my>=by && my<=by+bh) {
+        if (mx >= bx1 && mx <= bx1 + bw && my >= by && my <= by + bh) { store.downloadSave(); return; }
+        if (mx >= bx2 && mx <= bx2 + bw && my >= by && my <= by + bh) {
             const input = document.createElement('input');
             input.type = 'file'; input.accept = '.pshooter';
             input.onchange = ev => {
                 const file = ev.target.files[0]; if (!file) return;
                 const reader = new FileReader();
-                reader.onload = re => {
-                    const res = store.importFile(re.target.result);
-                    alert(res.ok ? '✅ Save imported successfully!' : '❌ Error: ' + res.reason);
-                };
+                reader.onload = re => { const res = store.importFile(re.target.result); alert(res.ok ? '✅ Imported!' : '❌ ' + res.reason); };
                 reader.readAsArrayBuffer(file);
             };
             input.click();
+            return;
         }
-    } else if(gameState==='shop'){
-        const res=handleShopClick(mx,my);
-        if(res==='close') gameState='menu';
-    } else if(gameState==='gameover'){
-        store.save(); gameState='menu';
-    }
-});
 
-// ── Touch Events (Mobile) ─────────────────────────────────────────────────────
-function getTouchPos(e) {
-    const touch = e.touches[0] || e.changedTouches[0];
-    const r = canvas.getBoundingClientRect();
-    return {
-        mx: (touch.clientX - r.left) * (W / r.width),
-        my: (touch.clientY - r.top) * (H / r.height)
-    };
+        // Start game: Tap anywhere in the "Start" area
+        if (my > 300 && my < 350) resetGame();
+
+    } else if (gameState === 'shop') {
+        const res = handleShopClick(mx, my);
+        if (res === 'close') gameState = 'menu';
+    } else if (gameState === 'gameover') {
+        store.save(); gameState = 'menu';
+    }
 }
+
+canvas.addEventListener('click', e => {
+    const r = canvas.getBoundingClientRect();
+    const mx = (e.clientX - r.left) * (W / r.width);
+    const my = (e.clientY - r.top) * (H / r.height);
+    handleInteraction(mx, my, false);
+});
 
 canvas.addEventListener('touchstart', e => {
     e.preventDefault();
     const { mx, my } = getTouchPos(e);
+    handleInteraction(mx, my, true);
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+    e.preventDefault();
     if (gameState === 'playing') {
+        const { mx } = getTouchPos(e);
         touchX = mx;
-    } else {
-        // Redirect to click logic
-        const clickEv = { clientX: (e.touches[0]||e.changedTouches[0]).clientX, clientY: (e.touches[0]||e.changedTouches[0]).clientY };
-        // We reuse the click handler logic by manually calling it with calculated coords
-        // Actually simpler to just have a common handleInteraction(mx, my) function
-        // but for now let's just fix the logic in-place.
-        if(gameState==='menu'){
-            ['easy','medium','hard'].forEach((d,i)=>{
-                const bx=W/2-130+i*130,by=196,bh=36;
-                if(mx>=bx-50&&mx<=bx+50&&my>=by&&my<=by+bh) diffMode=d;
-            });
-            if(mx>=W/2-100&&mx<=W/2+100&&my>=355&&my<=395){ store.save(); gameState='shop'; }
-            const bx1 = W/2 - 130, bx2 = W/2 + 20, by = 410, bw = 110, bh = 30;
-            if(mx>=bx1 && mx<=bx1+bw && my>=by && my<=by+bh) store.downloadSave();
-            if(mx>=bx2 && mx<=bx2+bw && my>=by && my<=by+bh) {
-                const input = document.createElement('input');
-                input.type = 'file'; input.accept = '.pshooter';
-                input.onchange = ev => {
-                    const file = ev.target.files[0]; if (!file) return;
-                    const reader = new FileReader();
-                    reader.onload = re => { const res = store.importFile(re.target.result); alert(res.ok ? '✅ Imported!' : '❌ ' + res.reason); };
-                    reader.readAsArrayBuffer(file);
-                };
-                input.click();
-            }
-            if(my > 300 && my < 350) resetGame();
-        } else if(gameState==='shop'){
-            const res=handleShopClick(mx,my);
-            if(res==='close') gameState='menu';
-        } else if(gameState==='gameover'){
-            store.save(); gameState='menu';
-        }
     }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+    touchX = null;
 }, { passive: false });
 
 canvas.addEventListener('touchmove', e => {
