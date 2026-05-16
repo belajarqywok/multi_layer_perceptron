@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plane Shooter — ML-Powered Enemy AI</title>
+  <meta name="description" content="HTML5 plane shooter game with enemies driven by a C++ MLP neural network, exported to ONNX and inferred in pure JavaScript." />
+  <link rel="stylesheet" href="game/style.css" />
+</head>
+<body>
+  <div id="wrapper">
+    <header>
+      <h1>✈ Plane Shooter</h1>
+      <p class="subtitle">Enemy AI powered | C++ (CMake) - Multi Layer Perceptron (MLP) - ONNX - Javascript inference</p>
+    </header>
+
+    <div id="canvas-container">
+      <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <footer>
+      <div class="info-grid">
+        <div class="info-card">
+          <h3>🧠 How the AI Works</h3>
+          <p>Each enemy feeds 5 game-state features into the trained MLP every 20 frames. The output is an <strong>aggression score [0–1]</strong> that controls shooting frequency, bullet dodging, and player tracking.</p>
+        </div>
+        <div class="info-card">
+          <h3>⚙️ ML Pipeline</h3>
+          <ol>
+            <li>Generate dummy data (Python script)</li>
+            <li>Train MLP engine (C++17, from scratch)</li>
+            <li>Export weights to ONNX via Protobuf</li>
+            <li>Extract weights → <code>model_weights.js</code></li>
+            <li>Pure JS forward pass in <code>model.js</code></li>
+          </ol>
+        </div>
+        <div class="info-card">
+          <h3>🎮 Controls</h3>
+          <ul>
+            <li><kbd>← →</kbd> or <kbd>A D</kbd> — Move</li>
+            <li><strong>Auto-fire</strong> enabled</li>
+            <li><kbd>Space</kbd> — Start / Retry</li>
+            <li>Click difficulty in menu to select</li>
+          </ul>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!--
+    Load order matters:
+    1. model_weights.js  — Generated weights + standardization params (run: make game-export)
+    2. model.js          — Pure JS MLP forward pass
+    3. game.js           — Game logic that calls model.predict()
+
+    If model_weights.js is missing, open the browser console for the error.
+  -->
+  <script src="game/model_weights.js"></script>
+  <script src="game/model.js"></script>
+  <script src="game/shop.js"></script>
+  <script src="game/game.js"></script>
+</body>
+</html>

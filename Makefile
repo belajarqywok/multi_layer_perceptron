@@ -17,6 +17,7 @@
         deploy-systemd deploy-systemd-workers \
         deploy-k8s deploy-k8s-scale deploy-k8s-down \
         deploy-helm deploy-helm-scale deploy-helm-down \
+        game-data game-train game-export game \
         docs docs-clean test-all clean
 
 all: test-all
@@ -210,3 +211,35 @@ docs:
 # Remove LaTeX build artifacts (keep the .pdf)
 docs-clean:
 	rm -f documentations.aux documentations.log documentations.out documentations.toc
+
+# ─── Game (Plane Shooter + ML Enemy AI) ─────────────────────────────────────────
+
+# Step 1: Generate 3000 labelled game-AI training samples into data/game_ai.csv
+game-data:
+	python3 scripts/generate_game_data.py
+
+# Step 2: Train the MLP regressor on game_ai.csv and export to build/game_ai.onnx
+#   Input  : rel_x, rel_y, bullet_near, bullet_rel_x, difficulty  (5 features)
+#   Output : aggression score [0, 1]
+game-train: game-data init build
+	cd build && ./mlp \
+		--input-dataset=../data/game_ai.csv \
+		--column-label=aggression \
+		--column-train=rel_x,rel_y,bullet_near,bullet_rel_x,difficulty \
+		--alg-type=regressor \
+		--option-std \
+		--hyperp-epochs=500 \
+		--output-onnx=game_ai.onnx
+
+# Step 3: Extract ONNX weights + standardisation params into game/model_weights.js
+#   Requires: pip install onnx numpy
+game-export: game-train
+	python3 scripts/export_weights_to_js.py build/game_ai.onnx data/game_ai.csv
+	@echo "game/model_weights.js generated."
+
+# Full pipeline: data → train → export weights → ready to open
+game: game-export
+	@echo ""
+	@echo "✅ Game is ready!"
+	@echo "   Open game/index.html in any browser, or deploy the game/ folder to GitHub Pages."
+	@echo "   No server needed — pure static HTML/CSS/JS."

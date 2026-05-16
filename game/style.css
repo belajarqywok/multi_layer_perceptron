@@ -1,0 +1,92 @@
+/* style.css — Plane Shooter game page */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #030310;
+  color: #e0e0e0;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 24px 16px;
+  width: 100%;
+  max-width: 860px;
+}
+
+header { text-align: center; }
+header h1 {
+  font-size: 2rem;
+  color: #00E5FF;
+  letter-spacing: 2px;
+  text-shadow: 0 0 12px #00E5FF88;
+}
+.subtitle {
+  color: #7986CB;
+  font-size: 0.85rem;
+  margin-top: 4px;
+}
+
+#canvas-container {
+  border: 2px solid #1a237e;
+  border-radius: 10px;
+  box-shadow: 0 0 30px #00E5FF22, inset 0 0 60px #00000088;
+  overflow: hidden;
+  line-height: 0;
+}
+
+canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Info cards below the game */
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+.info-card {
+  background: #0a0a2e;
+  border: 1px solid #1a237e;
+  border-radius: 10px;
+  padding: 16px;
+}
+.info-card h3 {
+  font-size: 0.9rem;
+  color: #00E5FF;
+  margin-bottom: 8px;
+}
+.info-card p, .info-card li {
+  font-size: 0.8rem;
+  color: #b0bec5;
+  line-height: 1.55;
+}
+.info-card ol, .info-card ul { padding-left: 18px; }
+.info-card li { margin-bottom: 3px; }
+.info-card strong { color: #FFF9C4; }
+.info-card code {
+  background: #1a237e44;
+  color: #80CBC4;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+}
+kbd {
+  background: #1a237e;
+  border: 1px solid #3949AB;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 0.78rem;
+  color: #E0E0E0;
+}
