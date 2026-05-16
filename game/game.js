@@ -11,6 +11,7 @@ const H = canvas.height = 600;
 let keys = {}, gameState = 'menu', diffMode = 'easy';
 let score, lives, frame, spawnTimer;
 let player, enemies, pBullets, eBullets, explosions, stars;
+let touchX = null; // last touch position for mobile movement
 
 const DIFF = {
     easy:   { val:0.0, hp:1, spawn:200, max:3, spd:1.0, col:'#4CAF50', label:'Easy'   },
@@ -58,6 +59,13 @@ class Player {
     update() {
         if (keys['ArrowLeft']||keys['a']||keys['A']) this.x-=this.spd;
         if (keys['ArrowRight']||keys['d']||keys['D']) this.x+=this.spd;
+        
+        // Mobile touch movement
+        if (touchX !== null) {
+            const dx = touchX - this.x;
+            if (Math.abs(dx) > 5) this.x += Math.sign(dx) * this.spd;
+        }
+
         this.x=Math.max(this.w/2, Math.min(W-this.w/2, this.x));
         if (this.cd>0) this.cd--;
         if (this.inv>0) this.inv--;
@@ -360,6 +368,7 @@ canvas.addEventListener('click',e=>{
     const r=canvas.getBoundingClientRect();
     const mx=(e.clientX-r.left)*(W/r.width);
     const my=(e.clientY-r.top)*(H/r.height);
+    
     if(gameState==='menu'){
         ['easy','medium','hard'].forEach((d,i)=>{
             const bx=W/2-130+i*130,by=196,bh=36;
@@ -369,18 +378,12 @@ canvas.addEventListener('click',e=>{
 
         // Menu Save/Load handlers
         const bx1 = W/2 - 130, bx2 = W/2 + 20, by = 410, bw = 110, bh = 30;
-        if(mx>=bx1 && mx<=bx1+bw && my>=by && my<=by+bh) {
-            // Export: Just trigger the download directly (simplest for user)
-            store.downloadSave();
-        }
+        if(mx>=bx1 && mx<=bx1+bw && my>=by && my<=by+bh) store.downloadSave();
         if(mx>=bx2 && mx<=bx2+bw && my>=by && my<=by+bh) {
-            // Import: Trigger file upload
             const input = document.createElement('input');
-            input.type = 'file';
-            input.accept = '.pshooter';
-            input.onchange = e => {
-                const file = e.target.files[0];
-                if (!file) return;
+            input.type = 'file'; input.accept = '.pshooter';
+            input.onchange = ev => {
+                const file = ev.target.files[0]; if (!file) return;
                 const reader = new FileReader();
                 reader.onload = re => {
                     const res = store.importFile(re.target.result);
@@ -390,12 +393,74 @@ canvas.addEventListener('click',e=>{
             };
             input.click();
         }
-    }
-    if(gameState==='shop'){
+    } else if(gameState==='shop'){
         const res=handleShopClick(mx,my);
         if(res==='close') gameState='menu';
+    } else if(gameState==='gameover'){
+        store.save(); gameState='menu';
     }
 });
+
+// ── Touch Events (Mobile) ─────────────────────────────────────────────────────
+function getTouchPos(e) {
+    const touch = e.touches[0] || e.changedTouches[0];
+    const r = canvas.getBoundingClientRect();
+    return {
+        mx: (touch.clientX - r.left) * (W / r.width),
+        my: (touch.clientY - r.top) * (H / r.height)
+    };
+}
+
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const { mx, my } = getTouchPos(e);
+    if (gameState === 'playing') {
+        touchX = mx;
+    } else {
+        // Redirect to click logic
+        const clickEv = { clientX: (e.touches[0]||e.changedTouches[0]).clientX, clientY: (e.touches[0]||e.changedTouches[0]).clientY };
+        // We reuse the click handler logic by manually calling it with calculated coords
+        // Actually simpler to just have a common handleInteraction(mx, my) function
+        // but for now let's just fix the logic in-place.
+        if(gameState==='menu'){
+            ['easy','medium','hard'].forEach((d,i)=>{
+                const bx=W/2-130+i*130,by=196,bh=36;
+                if(mx>=bx-50&&mx<=bx+50&&my>=by&&my<=by+bh) diffMode=d;
+            });
+            if(mx>=W/2-100&&mx<=W/2+100&&my>=355&&my<=395){ store.save(); gameState='shop'; }
+            const bx1 = W/2 - 130, bx2 = W/2 + 20, by = 410, bw = 110, bh = 30;
+            if(mx>=bx1 && mx<=bx1+bw && my>=by && my<=by+bh) store.downloadSave();
+            if(mx>=bx2 && mx<=bx2+bw && my>=by && my<=by+bh) {
+                const input = document.createElement('input');
+                input.type = 'file'; input.accept = '.pshooter';
+                input.onchange = ev => {
+                    const file = ev.target.files[0]; if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = re => { const res = store.importFile(re.target.result); alert(res.ok ? '✅ Imported!' : '❌ ' + res.reason); };
+                    reader.readAsArrayBuffer(file);
+                };
+                input.click();
+            }
+            if(my > 300 && my < 350) resetGame();
+        } else if(gameState==='shop'){
+            const res=handleShopClick(mx,my);
+            if(res==='close') gameState='menu';
+        } else if(gameState==='gameover'){
+            store.save(); gameState='menu';
+        }
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', e => {
+    if (gameState === 'playing') {
+        const { mx } = handleTouch(e);
+        touchX = mx;
+    }
+}, { passive: false });
+
+canvas.addEventListener('touchend', e => {
+    touchX = null;
+}, { passive: false });
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 window.addEventListener('load',()=>{
