@@ -1,0 +1,10 @@
+# =============================================================================
+# namespace.yaml — Kubernetes Namespace for the MLP Engine
+# =============================================================================
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mlp-engine
+  labels:
+    app.kubernetes.io/name: mlp-engine
+    app.kubernetes.io/managed-by: kubectl

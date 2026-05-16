@@ -1,0 +1,60 @@
+# =============================================================================
+# mlp-master.service — Systemd Unit for the MLP Parameter Server (Master Node)
+# =============================================================================
+# Install to: /etc/systemd/system/mlp-master.service
+#
+# Commands:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now mlp-master
+#   sudo systemctl status mlp-master
+#   journalctl -u mlp-master -f
+# =============================================================================
+
+[Unit]
+Description=MLP Parameter Server (Master Node)
+Documentation=https://github.com/belajarqywok/multi_layer_perceptron
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=mlp
+Group=mlp
+WorkingDirectory=/opt/mlp-engine
+
+# Generate synthetic dataset if missing
+ExecStartPre=/usr/bin/python3 /opt/mlp-engine/scripts/seed_csv.py
+
+# Start the master Parameter Server
+ExecStart=/opt/mlp-engine/mlp \
+    --input-dataset=/opt/mlp-engine/data/classification.csv \
+    --column-label=class \
+    --column-train=f1,f2,f3 \
+    --alg-type=classifier \
+    --option-std \
+    --hyperp-epochs=200 \
+    --output-onnx=/opt/mlp-engine/model.onnx \
+    --type-training=distributed \
+    --dist-role=master \
+    --dist-master-addr=0.0.0.0 \
+    --dist-master-port=8080
+
+# Gracefully send shutdown signal before stopping
+ExecStop=/opt/mlp-engine/mlp \
+    --type-training=distributed \
+    --dist-role=shutdown \
+    --dist-master-addr=127.0.0.1 \
+    --dist-master-port=8080
+
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mlp-master
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

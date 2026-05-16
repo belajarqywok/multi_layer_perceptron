@@ -1,0 +1,73 @@
+# =============================================================================
+# docker-compose.yml — Local Distributed Training Cluster
+# =============================================================================
+# Spawns 1 Master node + N Worker nodes using Docker Compose.
+# Workers connect to the master via the internal Docker network.
+#
+# Usage:
+#   # Start cluster with 3 workers (default):
+#   docker compose up --scale worker=3
+#
+#   # Start cluster with 5 workers:
+#   docker compose up --scale worker=5
+#
+#   # Stop and clean up:
+#   docker compose down
+# =============================================================================
+
+services:
+
+  # ─── Master Node ────────────────────────────────────────────────────────────
+  # The Parameter Server. Hosts the global weights and applies incoming gradients.
+  # Workers connect to this service on port 8080 via the internal Docker network.
+  master:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: mlp-engine:latest
+    container_name: mlp-master
+    hostname: mlp-master
+    ports:
+      - "8080:8080"           # Expose master port to the host for monitoring
+    environment:
+      ROLE: master
+      MASTER_ADDR: "0.0.0.0"  # Listen on all interfaces
+      MASTER_PORT: "8080"
+      EPOCHS: "200"
+      COMPUTE_TYPE: "CPU"
+    volumes:
+      - model_output:/app     # Persist model.onnx output to a shared volume
+    networks:
+      - mlp-cluster
+    healthcheck:
+      test: ["CMD", "sh", "-c", "ss -tlnp | grep 8080 || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ─── Worker Nodes ───────────────────────────────────────────────────────────
+  # Each worker connects to the master, computes gradients, and pushes them back.
+  # Scale workers with: docker compose up --scale worker=N
+  worker:
+    image: mlp-engine:latest
+    depends_on:
+      master:
+        condition: service_healthy
+    environment:
+      ROLE: worker
+      MASTER_ADDR: mlp-master   # Resolves via Docker internal DNS
+      MASTER_PORT: "8080"
+      EPOCHS: "200"
+      COMPUTE_TYPE: "CPU"
+      WORKER_DELAY: "5"         # Extra seconds to wait for master readiness
+    networks:
+      - mlp-cluster
+    deploy:
+      replicas: 3               # Change this to scale the number of workers
+
+volumes:
+  model_output:
+
+networks:
+  mlp-cluster:
+    driver: bridge

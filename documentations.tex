@@ -1,0 +1,287 @@
+\documentclass[11pt, a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{listings}
+\usepackage{xcolor}
+
+\geometry{a4paper, margin=1in}
+
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegray},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2
+}
+\lstset{style=mystyle}
+
+\title{Building a Universal Multi-Layer Perceptron from First Principles: A C++ Implementation with Cross-Language ONNX Portability}
+\author{Independent Researcher}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+This paper details the fundamental implementation of a Multi-Layer Perceptron (MLP) Artificial Neural Network constructed entirely from scratch in C++17. By abstaining from high-level backend frameworks (e.g., TensorFlow, PyTorch, Eigen) and relying strictly on the C++ Standard Library, this project demonstrates the raw mathematical mechanics of neural networks. The system features custom Matrix operations, Stochastic/Batch Gradient Descent (SGD) with Backpropagation, robust data pre-processing (Z-score standardization), and most notably, an integrated Open Neural Network Exchange (ONNX) exporter built via Protocol Buffers. This documentation elucidates the mathematical formulations driving the network and instructions for executing the pipeline.
+\end{abstract}
+
+\section{Introduction}
+Modern machine learning heavily abstracts the underlying calculus and linear algebra required to train a neural network. This project aims to strip away those abstractions by implementing a configurable MLP from the ground up. The primary objectives are:
+\begin{enumerate}
+    \item \textbf{Mathematical Transparency}: To provide a clear, readable C++ codebase that directly translates neural network calculus into imperative logic.
+    \item \textbf{Framework Independence}: To build a robust system without dependencies on external math libraries like BLAS or Eigen.
+    \item \textbf{Hardware Flexibility}: To support both CPU computation and GPU acceleration via OpenCL (\texttt{--compute-type=GPU}), routing the $O(N^3)$ Matrix Multiplication to thousands of GPU threads in parallel.
+    \item \textbf{Scalability}: To support multi-node distributed training via a custom TCP-based Parameter Server architecture (\texttt{--type-training=distributed}).
+    \item \textbf{Interoperability}: To serialize the trained weights natively into the ONNX format (\texttt{model.onnx}), allowing the model to be run for inference in \textbf{Python}, \textbf{Go}, \textbf{C++}, \textbf{C}, and \textbf{TypeScript}.
+\end{enumerate}
+
+\section{Methodology \& Mathematical Formulations}
+
+\subsection*{How This Works Under The Hood (For Beginners)}
+If you are reading this codebase to learn how Neural Networks actually work behind the scenes, here is the underlying intuition:
+\begin{enumerate}
+    \item \textbf{The Matrix (\texttt{src/matrix.hpp})}: A Neural Network is mostly just multiplying large grids of numbers together. We built a custom Matrix class that flattens 2D grids into a 1D array to maximize CPU cache speed.
+    \item \textbf{The Forward Pass (\texttt{src/mlp.hpp})}: We take your data ($X$), multiply it by our "Weights" ($W$), add a "Bias" ($B$), and pass it through a curved function (Sigmoid/ReLU) to get a prediction.
+    \item \textbf{The Backward Pass (\texttt{src/mlp.hpp})}: We see how wrong the prediction was, and use Calculus (The Chain Rule) to figure out exactly how much each Weight and Bias was responsible for that error. We then tweak them slightly to be less wrong next time.
+    \item \textbf{GPU Acceleration (\texttt{src/opencl\_utils.hpp})}: To make the math faster, we can send the matrices to the GPU using OpenCL, where thousands of tiny processors do the multiplication simultaneously.
+    \item \textbf{Distributed Training (\texttt{src/network.hpp})}: To make it \textit{even} faster, we use a Parameter Server architecture over TCP Sockets. A "Master" holds the weights, and multiple "Workers" download them, calculate the errors, and send the tweaks back to the Master.
+\end{enumerate}
+
+The network is defined as a sequence of discrete layers, mapping an input vector $X \in \mathbb{R}^{d_{in}}$ to an output vector $Y \in \mathbb{R}^{d_{out}}$. 
+
+\subsection{Forward Propagation}
+For an arbitrary layer $L$, let $A^{[L-1]}$ denote the activation matrix of the previous layer (where $A^{[0]} = X$). The pre-activation matrix $Z^{[L]}$ is calculated using the weight matrix $W^{[L]}$ and bias vector $B^{[L]}$:
+
+\begin{equation}
+Z^{[L]} = A^{[L-1]} \cdot W^{[L]} + B^{[L]}
+\end{equation}
+
+The activation matrix $A^{[L]}$ is subsequently derived by passing $Z^{[L]}$ through a non-linear activation function $f(x)$:
+
+\begin{equation}
+A^{[L]} = f(Z^{[L]})
+\end{equation}
+
+\subsubsection{Activation Functions}
+To model non-linear relationships, the network employs different activation functions based on the layer's topological position and the algorithmic objective:
+
+\begin{enumerate}
+    \item \textbf{Hidden Layers (ReLU):} 
+    \begin{equation}
+    f(x) = \max(0, x)
+    \end{equation}
+    The Rectified Linear Unit (ReLU) mitigates the vanishing gradient problem and introduces sparsity.
+    
+    \item \textbf{Output Layer (Binary Classification):}
+    \begin{equation}
+    f(x) = \sigma(x) = \frac{1}{1 + e^{-x}}
+    \end{equation}
+    The Sigmoid function maps outputs to $(0, 1)$, formulating pseudo-probabilities for binary states.
+
+    \item \textbf{Output Layer (Regression):}
+    \begin{equation}
+    f(x) = x
+    \end{equation}
+    A Linear activation allows the model to predict unbounded continuous numerical values.
+\end{enumerate}
+
+\subsection{Backward Propagation \& Optimization}
+The learning process utilizes Gradient Descent to minimize a Loss function $L(Y, \hat{Y})$. The algorithm calculates the partial derivative of the loss with respect to each weight via the \textbf{Chain Rule} ($\frac{\partial L}{\partial W}$).
+
+\subsubsection{Output Layer Error ($\delta^{out}$)}
+Depending on the activation function, the delta (error derivative) of the output layer simplifies elegantly:
+\begin{equation}
+\delta^{[L_{out}]} = A^{[L_{out}]} - Y
+\end{equation}
+
+\subsubsection{Hidden Layer Error ($\delta^{[L]}$)}
+The error is propagated backward to preceding hidden layers. Let $*$ denote the Hadamard (element-wise) product:
+\begin{equation}
+\delta^{[L]} = (\delta^{[L+1]} \cdot (W^{[L+1]})^T) * f'(Z^{[L]})
+\end{equation}
+
+Where $f'(x)$ for ReLU is the Heaviside step function:
+\begin{equation}
+f'(x) = 
+\begin{cases} 
+1 & \text{if } x > 0 \\ 
+0 & \text{otherwise} 
+\end{cases}
+\end{equation}
+
+\subsubsection{Parameter Update (Stochastic Gradient Descent)}
+Gradients for the weights ($\Delta W$) and biases ($\Delta B$) are computed as:
+\begin{equation}
+\Delta W^{[L]} = (A^{[L-1]})^T \cdot \delta^{[L]}
+\end{equation}
+\begin{equation}
+\Delta B^{[L]} = \sum_{i=1}^{m} \delta^{[L]}_{i}
+\end{equation}
+
+The parameters are updated using a learning rate $\alpha$:
+\begin{align}
+W^{[L]} &:= W^{[L]} - \alpha \cdot \Delta W^{[L]} \\
+B^{[L]} &:= B^{[L]} - \alpha \cdot \Delta B^{[L]}
+\end{align}
+
+\section{Data Pre-Processing Engineering}
+Real-world datasets introduce numerical instability. The \texttt{CSVReader} module provides robust preprocessing mechanisms:
+
+\begin{enumerate}
+    \item \textbf{Z-Score Standardization}: 
+    To accelerate convergence and prevent exploding gradients (specifically in continuous regression tasks), data features (and optionally targets) are scaled:
+    \begin{equation}
+    X_{norm} = \frac{X - \mu}{\sigma}
+    \end{equation}
+    \item \textbf{Data Integrity Checks}: Automated cleansing of \texttt{NaN} vectors and duplication elimination.
+\end{enumerate}
+
+\section{System Architecture: ONNX Serialization}
+Rather than utilizing the heavy \texttt{onnxruntime} libraries to construct the graph, this system interfaces directly with \textbf{Protocol Buffers}. 
+
+\begin{enumerate}
+    \item \textbf{Protocol Buffer Compilation}: The canonical \texttt{onnx.proto} is compiled via \texttt{protoc} into native C++ structures (\texttt{onnx.pb.cc} / \texttt{onnx.pb.h}).
+    \item \textbf{Graph Construction}: The \texttt{ONNXExporter} class iteratively maps the trained $W$ and $B$ tensors to \texttt{onnx::TensorProto} nodes.
+    \item \textbf{Computational DAG}: It builds a Directed Acyclic Graph (DAG) using \texttt{MatMul}, \texttt{Add}, and specific Activation operation nodes.
+    \item \textbf{Binary Serialization}: The model is serialized as an \texttt{IR\_VERSION 8} compliant \texttt{.onnx} binary file.
+\end{enumerate}
+
+\section{Experimental Setup \& Usage Instructions}
+
+This project includes a fully automated \texttt{Makefile} workflow designed for Ubuntu/WSL environments.
+
+\subsection{The One-Click Pipeline}
+To compile the C++ engine, generate synthetic experimental data, train the mathematical model, serialize the ONNX graph, and run identical inferences sequentially across Python, Go, C++, and C, execute:
+\begin{lstlisting}[language=bash]
+make test-all
+\end{lstlisting}
+\textit{Note: TypeScript inference must be run separately from Windows PowerShell due to a WSL1 stdio limitation:}
+\begin{lstlisting}[language=bash]
+npx ts-node inferences/inference.ts build/model.onnx
+\end{lstlisting}
+
+\subsection{Manual Execution Pipeline}
+
+\textbf{1. Model Training (Single Node Classification Example)}\\
+Execute the custom engine to train a binary classifier over 200 epochs, applying Z-score standardization, and exporting the topological graph to \texttt{model.onnx}.
+\begin{lstlisting}[language=bash]
+cd build
+./mlp --input-dataset=../data/classification.csv \
+      --column-label=class \
+      --column-train=f1,f2,f3 \
+      --alg-type=classifier \
+      --option-std \
+      --hyperp-epochs=200 \
+      --output-onnx=model.onnx
+\end{lstlisting}
+
+\textbf{2. Model Training (GPU Hardware Acceleration Example)}\\
+By leveraging the OpenCL integration, you can offload the $O(N^3)$ Matrix Multiplication bottleneck to your system's GPU (or Intel HD graphics) by passing the \texttt{--compute-type=GPU} flag. If no GPU is found, the engine gracefully falls back to CPU computation.
+\begin{lstlisting}[language=bash]
+make train-gpu
+\end{lstlisting}
+
+\textbf{3. Model Training (Distributed Parameter Server Architecture)}\\
+We have implemented a fully custom TCP-based distributed training module. A Master node hosts the global weights, while multiple Worker nodes compute local gradients and push them asynchronously. 
+\begin{lstlisting}[language=bash]
+make train-dist
+\end{lstlisting}
+\textit{(This command runs \texttt{test\_dist.sh}, spawning 1 Master and 3 Workers in the background, then automatically shuts down the Master after training to export the \texttt{dist\_model.onnx} graph.)}
+
+\textbf{4. Cross-Language Inference}\\
+Verify the ONNX graph's portability by running predictions on a dummy tensor $[1.0, 2.0, 3.0]$ across five different language paradigms. All outputs are numerically identical.
+
+\begin{center}
+\begin{tabular}{|l|l|l|}
+\hline
+\textbf{Make Target} & \textbf{Language} & \textbf{Runtime} \\
+\hline
+\texttt{make inference-py}  & Python     & \texttt{onnxruntime} (pip) \\
+\texttt{make inference-go}  & Go         & \texttt{yalue/onnxruntime\_go} \\
+\texttt{make inference-cpp} & C++        & ONNX Runtime C++ API \\
+\texttt{make inference-c}   & C          & ONNX Runtime C API (no C++ wrappers) \\
+\texttt{make inference-ts}  & TypeScript & \texttt{onnxruntime-node} (npm) \\
+\hline
+\end{tabular}
+\end{center}
+
+\section{Deployment}
+
+All deployment configurations reside in the \texttt{deploy/} directory. The engine supports four production-grade deployment strategies.
+
+\subsection{Docker (Local Multi-Node Cluster)}
+A multi-stage \texttt{Dockerfile} compiles the engine in a builder stage and produces a lean runtime image. \texttt{docker-compose.yml} orchestrates the full cluster locally with configurable worker counts.
+\begin{lstlisting}[language=bash]
+make deploy-docker                    # 1 master + 3 workers (default)
+make deploy-docker-scale WORKERS=5   # Scale workers on the fly
+make deploy-docker-down              # Tear down
+\end{lstlisting}
+
+\subsection{Systemd (Bare-Metal / VM)}
+Template unit files (\texttt{mlp-master.service} and \texttt{mlp-worker@.service}) are provided for direct installation on Linux hosts. The \texttt{@} symbol denotes a systemd \textit{template unit}, enabling multiple independent worker instances.
+\begin{lstlisting}[language=bash]
+make deploy-systemd              # Install master + 3 workers
+make deploy-systemd-workers N=5 # Enable N workers
+sudo systemctl status 'mlp-worker@*'
+\end{lstlisting}
+
+\subsection{Kubernetes (Plain Manifests)}
+Pure YAML manifests under \texttt{deploy/k8s/} deploy the cluster to any Kubernetes environment (Minikube, EKS, GKE, etc.). The worker \texttt{Deployment} uses an \texttt{initContainer} to wait for master readiness via \texttt{nc -z} before connecting.
+\begin{lstlisting}[language=bash]
+make deploy-k8s                    # Deploy cluster (3 workers)
+make deploy-k8s-scale WORKERS=5   # Rescale workers live
+kubectl get pods -n mlp-engine
+make deploy-k8s-down
+\end{lstlisting}
+
+\subsection{Helm (Configurable Chart)}
+The Helm chart under \texttt{deploy/helm/mlp-engine/} allows full parameterization via \texttt{values.yaml}. The primary scaling knob is \texttt{worker.replicaCount}.
+\begin{lstlisting}[language=bash]
+make deploy-helm                   # Default: 3 workers
+helm install mlp-engine ./deploy/helm/mlp-engine \
+  --set worker.replicaCount=5 \
+  --set training.epochs=500 \
+  --set training.computeType=GPU
+make deploy-helm-scale WORKERS=8   # Rescale after install
+make deploy-helm-down
+\end{lstlisting}
+
+\subsection{Deployment Scaling Summary}
+\begin{center}
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Deployment Method} & \textbf{Scale Command} \\
+\hline
+Docker Compose & \texttt{make deploy-docker-scale WORKERS=N} \\
+Systemd        & \texttt{make deploy-systemd-workers N=N} \\
+Kubernetes     & \texttt{make deploy-k8s-scale WORKERS=N} \\
+Helm           & \texttt{make deploy-helm-scale WORKERS=N} \\
+\hline
+\end{tabular}
+\end{center}
+
+\section{Conclusion}
+By meticulously defining the linear algebra matrices, activation derivations, and backpropagation chains in native C++, this implementation serves as both a high-performance educational tool and a lightweight standalone neural engine. With support for \textbf{GPU acceleration} (OpenCL), \textbf{distributed training} (TCP Parameter Server), \textbf{cross-language ONNX inference} across 5 languages (Python, Go, C++, C, TypeScript), and \textbf{four deployment strategies} (Docker, systemd, Kubernetes, Helm), this project demonstrates the full ML lifecycle from raw mathematics to production-ready deployment --- without any high-level ML framework dependency.
+
+\end{document}

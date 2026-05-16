@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlp-master
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "mlp-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlp-master
+  template:
+    metadata:
+      labels:
+        app: mlp-master
+        app.kubernetes.io/component: master
+    spec:
+      containers:
+        - name: mlp-master
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.master.port }}
+              name: param-server
+          env:
+            - name: ROLE
+              value: "master"
+            - name: MASTER_ADDR
+              value: "0.0.0.0"
+          envFrom:
+            - configMapRef:
+                name: mlp-config
+          resources:
+            {{- toYaml .Values.master.resources | nindent 12 }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.master.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.master.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlp-master
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "mlp-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: master
+spec:
+  type: {{ .Values.master.service.type }}
+  selector:
+    app: mlp-master
+  ports:
+    - name: param-server
+      port: {{ .Values.master.port }}
+      targetPort: {{ .Values.master.port }}
+      protocol: TCP

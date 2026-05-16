@@ -1,0 +1,16 @@
+apiVersion: v2
+name: mlp-engine
+description: |
+  A Helm chart for deploying the MLP training cluster (Parameter Server + Workers).
+  Supports configurable worker count, training hyperparameters, and compute type.
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - machine-learning
+  - neural-network
+  - distributed-training
+  - onnx
+maintainers:
+  - name: belajarqywok
+    url: https://github.com/belajarqywok/multi_layer_perceptron

@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlp-worker
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "mlp-engine.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+  annotations:
+    # Annotate the current replica count for visibility in dashboards
+    mlp-engine/worker-count: {{ .Values.worker.replicaCount | quote }}
+spec:
+  # ── This is the primary knob ──────────────────────────────────────────────
+  # Set via: helm install mlp . --set worker.replicaCount=N
+  # Or scale live: kubectl scale deployment mlp-worker --replicas=N -n mlp-engine
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      app: mlp-worker
+  template:
+    metadata:
+      labels:
+        app: mlp-worker
+        app.kubernetes.io/component: worker
+    spec:
+      # Wait for the master TCP port to open before starting any worker container
+      initContainers:
+        - name: wait-for-master
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for master at mlp-master:{{ .Values.master.port }}..."
+              until nc -z mlp-master {{ .Values.master.port }}; do
+                sleep 2
+              done
+              echo "Master is ready. Starting worker."
+      containers:
+        - name: mlp-worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: ROLE
+              value: "worker"
+          envFrom:
+            - configMapRef:
+                name: mlp-config
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}

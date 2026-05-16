@@ -1,0 +1,30 @@
+# =============================================================================
+# configmap.yaml — Shared training configuration for all MLP pods
+# =============================================================================
+# All master and worker pods read these values as environment variables.
+# Modify here to change training hyperparameters cluster-wide.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlp-config
+  namespace: mlp-engine
+  labels:
+    app.kubernetes.io/name: mlp-engine
+data:
+  # Training configuration
+  EPOCHS: "200"
+  ALG_TYPE: "classifier"
+  COMPUTE_TYPE: "CPU"          # Set to "GPU" if nodes have OpenCL-capable GPUs
+
+  # Dataset columns
+  COLUMN_LABEL: "class"
+  COLUMN_TRAIN: "f1,f2,f3"
+
+  # Network configuration
+  MASTER_PORT: "8080"
+  WORKER_DELAY: "10"           # Seconds workers wait before connecting to master
+
+  # The master's internal K8s DNS name (resolves via the ClusterIP service)
+  # Format: <service-name>.<namespace>.svc.cluster.local
+  MASTER_ADDR: "mlp-master.mlp-engine.svc.cluster.local"

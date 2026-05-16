@@ -1,0 +1,60 @@
+# =============================================================================
+# values.yaml — Default Helm values for the MLP Engine chart
+# =============================================================================
+# Override any value during install:
+#   helm install mlp ./deploy/helm/mlp-engine --set worker.replicaCount=5
+#
+# Or provide a custom values file:
+#   helm install mlp ./deploy/helm/mlp-engine -f my-values.yaml
+# =============================================================================
+
+# ─── Container Image ────────────────────────────────────────────────────────
+image:
+  repository: mlp-engine
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# ─── Master Node Configuration ──────────────────────────────────────────────
+master:
+  port: 8080
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "256Mi"
+    limits:
+      cpu: "2000m"
+      memory: "1Gi"
+  service:
+    type: ClusterIP
+
+# ─── Worker Node Configuration ──────────────────────────────────────────────
+worker:
+  # Number of parallel training worker nodes.
+  # Each worker independently fetches weights, computes gradients, and pushes
+  # them back to the master asynchronously (ASGD).
+  replicaCount: 3       # ← Primary knob: change to run N workers
+
+  # Extra seconds to delay startup — gives the master time to initialize
+  startupDelay: 10
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "256Mi"
+    limits:
+      cpu: "2000m"
+      memory: "1Gi"
+
+# ─── Training Hyperparameters ────────────────────────────────────────────────
+training:
+  epochs: 200
+  algType: classifier     # "classifier" or "regressor"
+  optionStd: true         # Enable Z-score normalization
+  computeType: CPU        # "CPU" or "GPU" (requires OpenCL-capable nodes)
+  columnLabel: "class"
+  columnTrain: "f1,f2,f3"
+
+# ─── Namespace ───────────────────────────────────────────────────────────────
+namespace:
+  create: true
+  name: mlp-engine

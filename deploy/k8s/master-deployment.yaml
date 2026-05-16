@@ -1,0 +1,91 @@
+# =============================================================================
+# master-deployment.yaml — Kubernetes Deployment for the MLP Master Node
+# =============================================================================
+# The master runs a single Pod acting as the Parameter Server.
+# It listens on port 8080 for incoming Worker connections.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlp-master
+  namespace: mlp-engine
+  labels:
+    app: mlp-master
+    app.kubernetes.io/name: mlp-engine
+    app.kubernetes.io/component: master
+spec:
+  replicas: 1    # There must always be exactly 1 master
+  selector:
+    matchLabels:
+      app: mlp-master
+  template:
+    metadata:
+      labels:
+        app: mlp-master
+        app.kubernetes.io/component: master
+    spec:
+      containers:
+        - name: mlp-master
+          image: mlp-engine:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+              name: parameter-server
+          env:
+            - name: ROLE
+              value: "master"
+            - name: MASTER_ADDR
+              value: "0.0.0.0"     # Listen on all pod interfaces
+          envFrom:
+            - configMapRef:
+                name: mlp-config   # Loads EPOCHS, COMPUTE_TYPE, MASTER_PORT, etc.
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "256Mi"
+            limits:
+              cpu: "2000m"
+              memory: "1Gi"
+          # Liveness probe: check if the master TCP port is still open
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          # Readiness probe: workers only connect once master is ready
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: model-output
+              mountPath: /app/model-output   # Persist the exported ONNX model
+      volumes:
+        - name: model-output
+          emptyDir: {}   # Replace with a PersistentVolumeClaim for production
+
+---
+# =============================================================================
+# master-service.yaml — ClusterIP Service for Master Node Discovery
+# =============================================================================
+# Workers use this service's DNS name to find the master:
+#   mlp-master.mlp-engine.svc.cluster.local:8080
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlp-master
+  namespace: mlp-engine
+  labels:
+    app: mlp-master
+    app.kubernetes.io/component: master
+spec:
+  type: ClusterIP
+  selector:
+    app: mlp-master
+  ports:
+    - name: parameter-server
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

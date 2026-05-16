@@ -1,0 +1,66 @@
+# =============================================================================
+# mlp-worker@.service — Systemd Template Unit for MLP Worker Nodes
+# =============================================================================
+# This is a TEMPLATE unit (note the @). The %i specifier becomes the instance
+# name, allowing multiple independent workers to run simultaneously.
+#
+# Install to: /etc/systemd/system/mlp-worker@.service
+#
+# Commands:
+#   # Enable and start 3 workers (worker@1, worker@2, worker@3):
+#   sudo systemctl enable --now mlp-worker@{1,2,3}
+#
+#   # Check status of all workers:
+#   sudo systemctl status 'mlp-worker@*'
+#
+#   # View logs for worker 2:
+#   journalctl -u mlp-worker@2 -f
+#
+#   # Stop and disable a specific worker:
+#   sudo systemctl disable --now mlp-worker@2
+# =============================================================================
+
+[Unit]
+Description=MLP Training Worker Node #%i
+Documentation=https://github.com/belajarqywok/multi_layer_perceptron
+After=network.target mlp-master.service
+Wants=mlp-master.service
+
+[Service]
+Type=simple
+User=mlp
+Group=mlp
+WorkingDirectory=/opt/mlp-engine
+
+# Wait for master to start listening before this worker connects
+ExecStartPre=/bin/sleep 5
+
+# Start the worker. It connects to the master via MASTER_ADDR.
+ExecStart=/opt/mlp-engine/mlp \
+    --input-dataset=/opt/mlp-engine/data/classification.csv \
+    --column-label=class \
+    --column-train=f1,f2,f3 \
+    --alg-type=classifier \
+    --option-std \
+    --hyperp-epochs=200 \
+    --type-training=distributed \
+    --dist-role=worker \
+    --dist-master-addr=${MASTER_ADDR:-127.0.0.1} \
+    --dist-master-port=${MASTER_PORT:-8080}
+
+Restart=on-failure
+RestartSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mlp-worker-%i
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+
+# Allow overriding MASTER_ADDR and MASTER_PORT via environment file
+# Create /etc/mlp-worker.env with: MASTER_ADDR=192.168.1.10
+EnvironmentFile=-/etc/mlp-worker.env
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,59 @@
+# =============================================================================
+# worker-deployment.yaml — Kubernetes Deployment for MLP Worker Nodes
+# =============================================================================
+# Workers are horizontally scalable. Change `replicas` to control how many
+# parallel training nodes run simultaneously.
+#
+# Scale on the fly:
+#   kubectl scale deployment mlp-worker -n mlp-engine --replicas=5
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlp-worker
+  namespace: mlp-engine
+  labels:
+    app: mlp-worker
+    app.kubernetes.io/name: mlp-engine
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 3    # ← Change this number to run more or fewer parallel workers
+  selector:
+    matchLabels:
+      app: mlp-worker
+  template:
+    metadata:
+      labels:
+        app: mlp-worker
+        app.kubernetes.io/component: worker
+    spec:
+      # Workers must wait for the master pod to be ready before starting
+      initContainers:
+        - name: wait-for-master
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for master at mlp-master:8080..."
+              until nc -z mlp-master 8080; do
+                sleep 2
+              done
+              echo "Master is ready!"
+      containers:
+        - name: mlp-worker
+          image: mlp-engine:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ROLE
+              value: "worker"
+          envFrom:
+            - configMapRef:
+                name: mlp-config   # Loads MASTER_ADDR, EPOCHS, COMPUTE_TYPE, etc.
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "256Mi"
+            limits:
+              cpu: "2000m"
+              memory: "1Gi"

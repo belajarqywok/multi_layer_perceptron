@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlp-config
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "mlp-engine.labels" . | nindent 4 }}
+data:
+  EPOCHS: {{ .Values.training.epochs | quote }}
+  ALG_TYPE: {{ .Values.training.algType | quote }}
+  COMPUTE_TYPE: {{ .Values.training.computeType | quote }}
+  COLUMN_LABEL: {{ .Values.training.columnLabel | quote }}
+  COLUMN_TRAIN: {{ .Values.training.columnTrain | quote }}
+  MASTER_PORT: {{ .Values.master.port | quote }}
+  WORKER_DELAY: {{ .Values.worker.startupDelay | quote }}
+  # Workers resolve the master via Kubernetes internal DNS
+  MASTER_ADDR: "mlp-master.{{ .Values.namespace.name }}.svc.cluster.local"
